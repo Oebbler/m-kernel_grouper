@@ -1,0 +1,74 @@
+--- arch/arm/boot/compressed/head.S	2015-07-09 21:47:17.000000000 +0200
++++ arch/arm/boot/compressed/head.S	2016-08-16 15:05:07.000000000 +0200
+@@ -9,6 +9,11 @@
+  * published by the Free Software Foundation.
+  */
+ #include <linux/linkage.h>
++#include <asm/memory.h>
++
++#ifdef CONFIG_KEXEC_HARDBOOT
++  #include <asm/kexec.h>
++#endif
+ 
+ /*
+  * Debugging stuff
+@@ -440,6 +537,44 @@
+ 		add	r2, sp, #0x10000	@ 64k max
+ 		mov	r3, r7
+ 		bl	decompress_kernel
++
++/* Copy the kernel tagged list (atags):
++ *
++ * The kernel requires atags to be located in a direct-mapped region,
++ * usually below the kernel in the first 16 kB of RAM.  If they're above
++ * (the start of) the kernel, they need to be copied to a suitable
++ * location, e.g., the machine-defined params_phys.
++ *
++ * The assumption is that the tags will only be "out of place" if the
++ * decompressor code is also, so copying is implemented only in the "won't
++ * overwrite" case (which should be fixed).  Still need to make sure that
++ * the copied tags don't overwrite either the kernel or decompressor code
++ * (or rather, the remainder of it since everything up to here has already
++ * been executed).
++ *
++ * r4: zreladdr (kernel start)
++ * r8: atags */
++
++		/* Don't need to copy atags if they're already below the kernel. */
++		cmp	r8, r4
++		blo	call_kernel
++
++		/* r1: min(zreladdr, pc) */
++		mov	r1, pc
++		cmp	r4, r1
++		movlo	r1, r4
++
++		/* Compute max space for atags, if max <= 0 don't copy. */
++		ldr	r0, =params_phys	@ dest
++		subs	r2, r1, r0		@ max = min(zreladdr, pc) - dest
++		bls	call_kernel
++
++		/* Copy atags to params_phys. */
++		mov	r1, r8			@ src
++		bl	copy_atags
++		mov	r8, r0
++
++call_kernel:
+ 		bl	cache_clean_flush
+ 		bl	cache_off
+ 		mov	r0, #0			@ must be zero
+@@ -561,9 +698,14 @@
+  * bits for the RAM area only.
+  */
+ 		mov	r0, r3
++#if defined(PLAT_PHYS_OFFSET) && defined(END_MEM)
++		mov  r9, #PLAT_PHYS_OFFSET  @ start of RAM
++		ldr  r10, =END_MEM    @ end of RAM
++#else
+ 		mov	r9, r0, lsr #18
+ 		mov	r9, r9, lsl #18		@ start of RAM
+ 		add	r10, r9, #0x10000000	@ a reasonable RAM size
++#endif
+ 		mov	r1, #0x12
+ 		orr	r1, r1, #3 << 10
+ 		add	r2, r3, #16384

@@ -138,9 +138,7 @@ start:
 		.word	_edata			@ zImage end address
  THUMB(		.thumb			)
 1:		mov	r7, r1			@ save architecture ID
-		teq  r0, #0			@ Check for kexec_boot_atags.
-		movne  r8, r0		@ Save kexec_boot_tags.
-		moveq  r8, r2		@ save atags pointer
+		mov	r8, r2			@ save atags pointer
 
 #ifdef CONFIG_KEXEC_HARDBOOT
 		/* Check hardboot page for a kexec kernel. */
@@ -154,10 +152,80 @@ start:
 		mov	r0, #0
 		str	r0, [r3]
 
+/* Copy the kernel tagged list (atags):
+ *
+ * The kernel requires atags to be located in a direct-mapped region,
+ * usually below the kernel in the first 16 kB of RAM.  If they're above
+ * (the start of) the kernel, they need to be copied to a suitable
+ * location, e.g., the machine-defined params_phys.
+ *
+ * The assumption is that the tags will only be "out of place" if the
+ * decompressor code is also, so copying is implemented only in the "won't
+ * overwrite" case (which should be fixed).  Still need to make sure that
+ * the copied tags don't overwrite either the kernel or decompressor code
+ * (or rather, the remainder of it since everything up to here has already
+ * been executed).
+ *
+ * Vojtech Bocek <vbocek@gmail.com>: I've moved atags copying from guest kernel to
+ * the host and rewrote it from C to assembler in order to remove the need
+ * for guest kernel to be patched. I don't know assembler very well, so it
+ * doesn't look very good and I have no idea if I didn't accidentally break
+ * something, causing problems down the road. It's worked every time and I
+ * didn't notice any problem so far though.
+ *
+ * r4: zreladdr (kernel start)
+ * r8: kexec_boot_atags
+ * r2: boot_atags */
+		ldr	r8, [r3, #12]			@ kexec_boot_atags (r2: boot_atags)
+		ldr	r4, =zreladdr			@ zreladdr
+
+		/* No need to copy atags if they're already below kernel */
+		cmp	r8, r4
+		blo	no_atags_cpy
+
+		/* r0: min(zreladdr, pc) */
+		mov	r0, pc
+		cmp	r4, r0
+		movlo	r0, r4
+
+		/* Compute max space for atags, if max <= 0 don't copy. */
+		subs	r5, r0, r2			@ max = min(zreladdr, pc) - dest
+		bls	no_atags_cpy
+
+		/* Copy atags to params_phys. */
+		/* r8 src, r2 dest, r5 max */
+
+		ldr	r0, [r8]				@ first tag size
+		cmp	r0, #0
+		moveq	r4, #8
+		beq	catags_empty
+		mov	r4, r8
+
+catags_foreach:
+		lsl	r0, r0, #2				@ Multiply by 4
+		ldr	r0, [r4, r0]!			@ Load next tag size to r0 and address to r4
+		cmp	r0, #0
+		bne	catags_foreach
+
+		rsb	r4, r8, r4				@ r4 -= r8 (get only size)
+		add	r4, r4, #8				@ add size of the last tag
+catags_empty:
+		cmp	r5, r4					@ if(max <= size)
+		bcc	no_atags_cpy
+
+		mov	r5, #0					@ iterator
+catags_cpy:
+		ldr	r0, [r8, r5]
+		str	r0, [r2, r5]
+		add	r5, r5, #4
+		cmp	r5, r4
+		blo	catags_cpy
+
+no_atags_cpy:
 		/* Load boot arguments and jump to kexec kernel. */
-		ldr	r0, [r3, #12]	@ kexec_boot_atags (r2: boot_atags)
-		ldr	r1, [r3, #8]	@ kexec_mach_type
-		ldr	pc, [r3, #4]	@ kexec_start_address
+		ldr	r0, [r3, #12]			@ kexec_boot_atags (r2: boot_atags)
+		ldr	r1, [r3, #8]			@ kexec_mach_type
+		ldr	pc, [r3, #4]			@ kexec_start_address
 
 		.ltorg
 
@@ -245,59 +313,6 @@ restart:	adr	r0, LC0
 		mov	r10, r6
 #endif
 
-		mov	r5, #0			@ init dtb size to 0
-#ifdef CONFIG_ARM_APPENDED_DTB
-/*
- *   r0  = delta
- *   r2  = BSS start
- *   r3  = BSS end
- *   r4  = final kernel address
- *   r5  = appended dtb size (still unknown)
- *   r6  = _edata
- *   r7  = architecture ID
- *   r8  = atags/device tree pointer
- *   r9  = size of decompressed image
- *   r10 = end of this image, including  bss/stack/malloc space if non XIP
- *   r11 = GOT start
- *   r12 = GOT end
- *   sp  = stack pointer
- *
- * if there are device trees (dtb) appended to zImage, advance r10 so that the
- * dtb data will get relocated along with the kernel if necessary.
- */
-
-		ldr	lr, [r6, #0]
-#ifndef __ARMEB__
-		ldr	r1, =0xedfe0dd0		@ sig is 0xd00dfeed big endian
-#else
-		ldr	r1, =0xd00dfeed
-#endif
-		cmp	lr, r1
-		bne	dtb_check_done		@ not found
-
-		mov	r8, r6			@ use the appended device tree
-
-		/* Get the dtb's size */
-		ldr	r5, [r6, #4]
-#ifndef __ARMEB__
-		/* convert r5 (dtb size) to little endian */
-		eor	r1, r5, r5, ror #16
-		bic	r1, r1, #0x00ff0000
-		mov	r5, r5, ror #8
-		eor	r5, r5, r1, lsr #8
-#endif
-
-		/* preserve 64-bit alignment */
-		add	r5, r5, #7
-		bic	r5, r5, #7
-
-		/* relocate some pointers past the appended dtb */
-		add	r6, r6, r5
-		add	r10, r10, r5
-		add	sp, sp, r5
-dtb_check_done:
-#endif
-
 /*
  * Check to see if we will overwrite ourselves.
  *   r4  = final kernel address
@@ -367,16 +382,14 @@ wont_overwrite:
  *   r2  = BSS start
  *   r3  = BSS end
  *   r4  = kernel execution address
- *   r5  = appended dtb size (0 if not present)
  *   r7  = architecture ID
  *   r8  = atags pointer
  *   r11 = GOT start
  *   r12 = GOT end
  *   sp  = stack pointer
  */
-		orrs	r1, r0, r5
+		teq	r0, #0
 		beq	not_relocated
-
 		add	r11, r11, r0
 		add	r12, r12, r0
 
@@ -391,21 +404,12 @@ wont_overwrite:
 
 		/*
 		 * Relocate all entries in the GOT table.
-		 * Bump bss entries to _edata + dtb size
 		 */
 1:		ldr	r1, [r11, #0]		@ relocate entries in the GOT
-		add	r1, r1, r0		@ This fixes up C references
-		cmp	r1, r2			@ if entry >= bss_start &&
-		cmphs	r3, r1			@       bss_end > entry
-		addhi	r1, r1, r5		@    entry += dtb size
-		str	r1, [r11], #4		@ next entry
+		add	r1, r1, r0		@ table.  This fixes up the
+		str	r1, [r11], #4		@ C references.
 		cmp	r11, r12
 		blo	1b
-
-		/* bump our bss pointers too */
-		add	r2, r2, r5
-		add	r3, r3, r5
-
 #else
 
 		/*

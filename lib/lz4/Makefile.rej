@@ -1,0 +1,4 @@
+--- lib/lz4/Makefile	1970-01-01 01:00:00.000000000 +0100
++++ lib/lz4/Makefile	2016-08-16 15:05:07.000000000 +0200
+@@ -0,0 +1 @@
++obj-$(CONFIG_LZ4_DECOMPRESS) += lz4_decompress.o

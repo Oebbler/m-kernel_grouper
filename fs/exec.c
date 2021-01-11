@@ -1237,6 +1237,7 @@ int check_unsafe_exec(struct linux_binprm *bprm)
 		else
 			bprm->unsafe |= LSM_UNSAFE_PTRACE;
 	}
+ 
 
 	n_fs = 1;
 	spin_lock(&p->fs->lock);
@@ -2297,3 +2298,4 @@ int dump_seek(struct file *file, loff_t off)
 	return ret;
 }
 EXPORT_SYMBOL(dump_seek);
+

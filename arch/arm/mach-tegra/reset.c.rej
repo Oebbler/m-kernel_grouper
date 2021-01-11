@@ -1,0 +1,11 @@
+--- arch/arm/mach-tegra/reset.c	2015-07-09 21:47:17.000000000 +0200
++++ arch/arm/mach-tegra/reset.c	2016-08-16 15:05:07.000000000 +0200
+@@ -131,4 +150,8 @@
+ 			  __pa(&__tegra_cpu_reset_handler_data[TEGRA_RESET_DATA_SIZE]));
+ 
+ 	tegra_cpu_reset_handler_enable();
++
++#if defined(CONFIG_KEXEC_HARDBOOT) && defined(CONFIG_GROUPER_HARDBOOT_RECOVERY)
++	kexec_hardboot_hook = tegra_kexec_hardboot;
++#endif
+ }

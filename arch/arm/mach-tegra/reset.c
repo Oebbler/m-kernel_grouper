@@ -31,6 +31,10 @@
 #include <asm/kexec.h>
 #endif
 
+#ifdef CONFIG_KEXEC_HARDBOOT
+#include <asm/kexec.h>
+#endif
+
 static bool is_enabled;
 
 static void tegra_cpu_reset_handler_enable(void)
@@ -93,6 +97,21 @@ void tegra_cpu_reset_handler_restore(void)
 #endif
 
 #ifdef CONFIG_KEXEC_HARDBOOT
+#define RECOVERY_MODE	BIT(31)
+void tegra_kexec_hardboot(void)
+{
+	/* Reboot with the recovery kernel since the boot kernel decompressor may
+	 * not support the hardboot jump. */
+
+	void __iomem *reset = IO_ADDRESS(TEGRA_PMC_BASE + 0x00);
+
+	u32 reg = readl_relaxed(reset + PMC_SCRATCH0);
+	reg |= RECOVERY_MODE;
+	writel_relaxed(reg, reset + PMC_SCRATCH0);
+}
+#endif
+
+#if defined(CONFIG_KEXEC_HARDBOOT) && defined(CONFIG_GROUPER_HARDBOOT_RECOVERY)
 #define RECOVERY_MODE	BIT(31)
 void tegra_kexec_hardboot(void)
 {

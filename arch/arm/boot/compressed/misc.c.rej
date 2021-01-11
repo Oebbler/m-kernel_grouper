@@ -1,0 +1,10 @@
+--- arch/arm/boot/compressed/misc.c	2015-07-09 21:47:17.000000000 +0200
++++ arch/arm/boot/compressed/misc.c	2016-08-16 15:05:07.000000000 +0200
+@@ -25,6 +25,7 @@
+ #include <linux/stddef.h>	/* for NULL */
+ #include <linux/linkage.h>
+ #include <asm/string.h>
++#include <asm/setup.h>
+ 
+ 
+ static void putstr(const char *ptr);

@@ -38,6 +38,13 @@
 #include "pm-irq.h"
 MODULE_LICENSE("GPL");
 
+static signed int bb_timeout = 0;
+module_param(bb_timeout, int, 0644);
+MODULE_PARM_DESC(bb_timeout,
+        "baseband xmm power - baseband - timeout. If > 0, it is the seconds / 10, 0 disables the timeout and < 0 activates the stock behaviour. Default is 0.");
+
+signed int bb_timeout_val;
+
 unsigned long modem_ver = XMM_MODEM_VER_1130;
 EXPORT_SYMBOL(modem_ver);
 
@@ -575,8 +582,17 @@ void baseband_xmm_set_power_status(unsigned int status)
 		}
 
 		if (!wake_lock_active(&wakelock))
-			wake_lock(&wakelock);
-
+		{
+		 	if (bb_timeout > 0) 
+			{
+		 		bb_timeout_val = bb_timeout; 
+				wake_lock_timeout(&wakelock, HZ/10 * bb_timeout_val); 
+			}
+			else if (bb_timeout < 0) //Stock behaviour
+			{
+				wake_lock(&wakelock);
+			}
+		}
 		pr_debug("gpio host active high->\n");
 		break;
 	case BBXMM_PS_L2:

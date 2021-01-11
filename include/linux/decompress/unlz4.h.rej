@@ -1,0 +1,13 @@
+--- include/linux/decompress/unlz4.h	1970-01-01 01:00:00.000000000 +0100
++++ include/linux/decompress/unlz4.h	2016-08-16 15:05:07.000000000 +0200
+@@ -0,0 +1,10 @@
++#ifndef DECOMPRESS_UNLZ4_H
++#define DECOMPRESS_UNLZ4_H
++
++int unlz4(unsigned char *inbuf, int len,
++	int(*fill)(void*, unsigned int),
++	int(*flush)(void*, unsigned int),
++	unsigned char *output,
++	int *pos,
++	void(*error)(char *x));
++#endif
